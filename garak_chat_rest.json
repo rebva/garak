@@ -1,0 +1,20 @@
+{
+  "rest": {
+    "RestGenerator": {
+      "name": "FastAPI Chat",
+      "uri": "http://localhost:8080/chat",
+      "method": "post",
+      "request_timeout": 180,
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyMSIsInJvbGUiOiJ1c2VyIiwiZXhwIjoxNzY0MDM3MDE5fQ.oocTmF58ajxZVhmqgqiiHzq6_3f1kTB2mET1fNfLbHA"
+      },
+      "req_template_json_object": {
+        "message": "$INPUT",
+        "session_id": "garak-chat-session"
+      },
+      "response_json": true,
+      "response_json_field": "$.reply"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  garak:
+    build: .
+    container_name: garak_scanner
+    environment:
+      # 👇 ここは「FastAPI コンテナの名前 + ポート」に合わせて変更
+      #   あなたの LLM 側 compose が:
+      #     container_name: llm_api
+      #     ports: "8080:8080"
+      #   なら、llm_api:8080 でOK
+      - API_URL=http://llm_api:8080
+
+      # どの probe(攻撃パターン) を使うか
+      - GARAK_PROBES_CHAT=promptinject,dan,encoding,malwaregen,packagehallucination
+      - GARAK_PROBES_RAG=promptinject,misleading,xss,leakreplay
+
+      # 並列数・タイムアウト（さっき調整したやつ）
+      - GARAK_PARALLEL_ATTEMPTS=1
+      - GARAK_REQUEST_TIMEOUT=180
+      # GARAK_TOKEN はここにベタ書きしない。実行時に -e で渡す。
+
+    networks:
+      - garak-net
+
+    # レポートをホスト側に残したい場合はコメントを外す
+    # volumes:
+    #   - ./garak_runs:/root/.local/share/garak/garak_runs
+
+networks:
+  garak-net:
+    external: true

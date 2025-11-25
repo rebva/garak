@@ -1,0 +1,20 @@
+{
+  "rest": {
+    "RestGenerator": {
+      "name": "FastAPI RAG",
+      "uri": "http://sawachi2:8080/rag/chat",
+      "method": "post",
+      "request_timeout": 60,
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${GARAK_TOKEN}"
+      },
+      "req_template_json_object": {
+        "question": "$INPUT",
+        "session_id": "garak-rag-session"
+      },
+      "response_json": true,
+      "response_json_field": "$.answer"
+    }
+  }
+}
