@@ -2,9 +2,9 @@
 """
 Convert garak JSONL reports into human-friendly CSV files.
 
-- report.jsonl -> garak_report_summary.csv        (simple summary)
-- hitlog.jsonl -> garak_hitlog_details.csv       (raw hitlog fields)
-- report.jsonl -> garak_attempts_flat.csv        (FLATTENED attempts: prompt/output)
+- report.jsonl -> garak_report_summary.csv
+- hitlog.jsonl -> garak_hitlog_details.csv
+- report.jsonl -> garak_attempts_flat.csv   ★ 各 attempt をフラット化した「完全版」
 
 Usage:
     python garak_export_csv.py fastapi_chat_scan.report.jsonl fastapi_chat_scan.hitlog.jsonl
@@ -18,10 +18,7 @@ from pathlib import Path
 
 
 def load_jsonl(path: Path):
-    """Read a JSONL (JSON Lines) file line by line.
-
-    JSONL: 1 line = 1 JSON object
-    """
+    """JSONL (JSON Lines) を1行ずつ読むジェネレータ."""
     with path.open("r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -30,44 +27,29 @@ def load_jsonl(path: Path):
             try:
                 yield json.loads(line)
             except json.JSONDecodeError:
-                # If line is broken, just skip it (安全のため)
+                # 壊れた行はスキップ（安全優先）
                 continue
 
 
-# ----------------------------------------------------------------------
-# 1) report.jsonl -> simple summary (旧ロジック + probe_classname 対応)
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------
+# 1) サマリ: (probe, detector) ごとのスコア集計
+# ------------------------------------------------------------
 def export_report_summary(report_path: Path, output_path: Path):
     """
     Summarize garak report JSONL by (probe, detector).
 
     Output CSV columns:
         probe, detector, n_rows, n_with_score, avg_score
-
-    - 古いフォーマット: row["probe"], row["detector"], row["score"]
-    - 今回のような attempt フォーマットでは score が無いことが多いので、
-      「集計結果が薄い」こともあります（その場合は attempts_flat を見る）。
     """
-    scores_by_key = defaultdict(list)
+    scores_by_key = defaultdict(list)  # (probe, detector) -> [scores...]
     count_by_key = defaultdict(int)
 
     for row in load_jsonl(report_path):
-        # まず "probe" があればそれを優先（古い / hitlog 互換）
         probe = row.get("probe")
         detector = row.get("detector")
         score = row.get("score")
 
-        # 無い場合は attempt 形式を軽く見る（probe_classname / detector_results）
-        if probe is None and row.get("entry_type") == "attempt":
-            probe = row.get("probe_classname")
-            # detector_results: {detector_name: {...}} だが、
-            # ここでは「ざっくり代表一つ」でまとめる
-            det_results = row.get("detector_results") or {}
-            detector = ",".join(sorted(det_results.keys())) if det_results else None
-            # score は detector_results の中にある場合があるが、
-            # ここでは複雑なので集計しない（attempts_flat側で詳細を確認する）
-
-        # probe が無い行はスキップ（メタ情報や init など）
+        # probe がない行はメタ情報なので無視
         if probe is None:
             continue
 
@@ -90,23 +72,22 @@ def export_report_summary(report_path: Path, output_path: Path):
     print(f"[OK] report summary -> {output_path}")
 
 
-# ----------------------------------------------------------------------
-# 2) hitlog.jsonl -> 詳細 (既存ロジックそのまま)
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------
+# 2) hitlog: (probe, detector, score, goal, trigger, prompt, output)
+#    ※ 現状 hitlog 側には中身があまり無いケースもある
+# ------------------------------------------------------------
 def export_hitlog_details(hitlog_path: Path, output_path: Path):
     """
     Extract useful fields from hitlog JSONL.
 
     Output CSV columns:
         probe, detector, score, goal, trigger, prompt, output
-
-    ※ hitlog 側にあまり情報が無い場合は、ここがスカスカになることもあります。
-      その場合は attempts_flat の方がメインになります。
     """
     with output_path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["probe", "detector", "score", "goal",
-                         "trigger", "prompt", "output"])
+        writer.writerow(
+            ["probe", "detector", "score", "goal", "trigger", "prompt", "output"]
+        )
 
         for row in load_jsonl(hitlog_path):
             probe = row.get("probe")
@@ -121,134 +102,119 @@ def export_hitlog_details(hitlog_path: Path, output_path: Path):
             if probe is None:
                 continue
 
-            writer.writerow([
-                probe,
-                detector,
-                score,
-                goal,
-                trigger,
-                prompt,
-                output_text,
-            ])
+            writer.writerow(
+                [
+                    probe,
+                    detector,
+                    score,
+                    goal,
+                    trigger,
+                    prompt,
+                    output_text,
+                ]
+            )
 
     print(f"[OK] hitlog details -> {output_path}")
 
 
-# ----------------------------------------------------------------------
-# 3) report.jsonl -> FLATTENED attempts
-# ----------------------------------------------------------------------
-def flatten_attempt_row(row: dict) -> dict:
-    """
-    Garak report の "entry_type == attempt" をフラットな dict にする。
-
-    出力フィールド:
-        entry_type, run_id, seq, status,
-        probe_classname, goal,
-        triggers,  ( "|" で join した文字列)
-        prompt_text,  (全 user プロンプトを結合)
-        outputs_text  (全 generations を結合)
-    """
-    entry_type = row.get("entry_type")
-    if entry_type != "attempt":
-        return {}
-
-    run_id = row.get("run") or row.get("run_id") or ""
-    seq = row.get("seq")
-    status = row.get("status")
-
-    probe_classname = row.get("probe_classname") or ""
-    goal = row.get("goal") or ""
-
-    # triggers: list ->  " | " で join
-    triggers_list = row.get("triggers") or []
-    if isinstance(triggers_list, list):
-        triggers_text = " | ".join(str(t) for t in triggers_list)
-    else:
-        triggers_text = str(triggers_list)
-
-    # prompt: { "turns": [ { "role": "...", "content": { "text": "..." } }, ... ] }
-    prompt = row.get("prompt") or {}
-    turns = prompt.get("turns") or []
-    prompt_texts = []
-    for t in turns:
-        content = (t or {}).get("content") or {}
-        text = content.get("text")
-        if isinstance(text, str):
-            prompt_texts.append(text)
-    prompt_text = "\n---\n".join(prompt_texts)
-
-    # outputs: [ { "text": "..." }, ... ]
-    outputs = row.get("outputs") or []
-    output_texts = []
-    for o in outputs:
-        text = (o or {}).get("text")
-        if isinstance(text, str):
-            output_texts.append(text)
-    # generations を " \n====\n " で区切ってまとめる
-    outputs_text = "\n====\n".join(output_texts)
-
-    return {
-        "entry_type": entry_type,
-        "run_id": run_id,
-        "seq": seq,
-        "status": status,
-        "probe_classname": probe_classname,
-        "goal": goal,
-        "triggers": triggers_text,
-        "prompt_text": prompt_text,
-        "outputs_text": outputs_text,
-    }
-
-
+# ------------------------------------------------------------
+# 3) 完全版フラットナー: report.jsonl の "attempt" を 1行1レコードにする
+# ------------------------------------------------------------
 def export_attempts_flat(report_path: Path, output_path: Path):
     """
-    report.jsonl から "attempt" エントリをフラットな CSV にする。
+    Flatten "attempt" entries from report JSONL.
 
-    Output CSV columns:
-        entry_type, run_id, seq, status,
+    Output CSV columns (例):
+        run_id, attempt_seq, attempt_uuid,
         probe_classname, goal, triggers,
         prompt_text, outputs_text
+
+    - prompt_text  : prompt.turns[*].content.text を結合
+    - outputs_text : outputs[*].text を区切りつきで結合
     """
-    rows = []
-
-    for row in load_jsonl(report_path):
-        flat = flatten_attempt_row(row)
-        if not flat:
-            continue
-        rows.append(flat)
-
-    if not rows:
-        print("[WARN] no attempt entries found in report.jsonl")
-        return
-
-    fieldnames = [
-        "entry_type",
-        "run_id",
-        "seq",
-        "status",
-        "probe_classname",
-        "goal",
-        "triggers",
-        "prompt_text",
-        "outputs_text",
-    ]
-
     with output_path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for r in rows:
-            writer.writerow(r)
+        writer = csv.writer(f)
+
+        writer.writerow(
+            [
+                "run_id",
+                "attempt_seq",
+                "attempt_uuid",
+                "probe_classname",
+                "goal",
+                "triggers",
+                "prompt_text",
+                "outputs_text",
+            ]
+        )
+
+        for row in load_jsonl(report_path):
+            # "attempt" 以外（init, setup など）は無視
+            if row.get("entry_type") != "attempt":
+                continue
+
+            run_id = row.get("run_id") or row.get("run")  # どちらか入っている想定
+            attempt_seq = row.get("seq")
+            attempt_uuid = row.get("uuid")
+            probe_classname = row.get("probe_classname")
+            goal = row.get("goal")
+
+            # triggers: list -> " | " で結合
+            triggers_list = row.get("triggers") or []
+            if isinstance(triggers_list, list):
+                triggers = " | ".join(str(t) for t in triggers_list)
+            else:
+                triggers = str(triggers_list) if triggers_list is not None else ""
+
+            # prompt_text の抽出
+            prompt_obj = row.get("prompt") or {}
+            prompt_turns = prompt_obj.get("turns") or []
+            prompt_texts = []
+            for t in prompt_turns:
+                content = t.get("content") or {}
+                text = content.get("text")
+                if text:
+                    prompt_texts.append(text)
+            prompt_text = "\n\n---\n\n".join(prompt_texts)
+
+            # outputs_text の抽出
+            outputs = row.get("outputs") or []
+            outputs_texts = []
+            for i, out in enumerate(outputs):
+                if not isinstance(out, dict):
+                    continue
+                text = out.get("text")
+                if not text:
+                    continue
+                # どの出力か分かるように軽くヘッダを付ける
+                outputs_texts.append(f"[OUTPUT {i}]\n{text}")
+            outputs_text = "\n\n====\n\n".join(outputs_texts)
+
+            writer.writerow(
+                [
+                    run_id,
+                    attempt_seq,
+                    attempt_uuid,
+                    probe_classname,
+                    goal,
+                    triggers,
+                    prompt_text,
+                    outputs_text,
+                ]
+            )
 
     print(f"[OK] attempts flat -> {output_path}")
 
 
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------
 # main
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------
 def main():
     if len(sys.argv) != 3:
         print("Usage:")
-        print("  python garak_export_csv.py fastapi_chat_scan.report.jsonl fastapi_chat_scan.hitlog.jsonl")
+        print(
+            "  python garak_export_csv.py fastapi_chat_scan.report.jsonl fastapi_chat_scan.hitlog.jsonl"
+        )
         sys.exit(1)
 
     report_path = Path(sys.argv[1])
@@ -262,8 +228,13 @@ def main():
         print(f"[ERROR] hitlog file not found: {hitlog_path}")
         sys.exit(1)
 
+    # ① (probe, detector) のスコアサマリ
     export_report_summary(report_path, Path("garak_report_summary.csv"))
+
+    # ② hitlog から軽い情報を抽出
     export_hitlog_details(hitlog_path, Path("garak_hitlog_details.csv"))
+
+    # ③ report.jsonl の attempt をフラットに展開（★本命）
     export_attempts_flat(report_path, Path("garak_attempts_flat.csv"))
 
 
