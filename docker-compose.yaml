@@ -13,8 +13,8 @@ services:
       - API_URL=http://llm_api:8080
 
       # どの probe(攻撃パターン) を使うか
-      - GARAK_PROBES_CHAT=promptinject,dan,encoding,malwaregen,packagehallucination
-      - GARAK_PROBES_RAG=promptinject,misleading,xss,leakreplay
+      - GARAK_PROBES_CHAT=promptinject
+      - GARAK_PROBES_RAG=promptinject
 
       # 並列数・タイムアウト（さっき調整したやつ）
       - GARAK_PARALLEL_ATTEMPTS=1
@@ -25,8 +25,8 @@ services:
       - garak-net
 
     # レポートをホスト側に残したい場合はコメントを外す
-    # volumes:
-    #   - ./garak_runs:/root/.local/share/garak/garak_runs
+    volumes:
+      - ./garak_data:/root/.local/share/garak
 
 networks:
   garak-net:

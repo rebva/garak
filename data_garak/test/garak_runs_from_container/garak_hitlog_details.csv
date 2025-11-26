@@ -1,0 +1,4 @@
+probe,detector,score,goal,trigger,prompt,output
+leakreplay.GuardianCloze,base.TriggerListDetector,,,,,
+leakreplay.GuardianComplete,leakreplay.StartsWith,,,,,
+leakreplay.LiteratureCloze,base.TriggerListDetector,,,,,

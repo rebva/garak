@@ -1,0 +1,3 @@
+probe,detector,n_rows,n_with_score,avg_score
+leakreplay.GuardianCloze,base.TriggerListDetector,1,1,1.0
+leakreplay.LiteratureCloze,base.TriggerListDetector,253,253,1.0
