@@ -25,6 +25,7 @@ services:
       - garak-net
 
     # レポートをホスト側に残したい場合はコメントを外す
+    # host : container 間でディレクトリを共有する
     volumes:
       - ./garak_data:/root/.local/share/garak
 
