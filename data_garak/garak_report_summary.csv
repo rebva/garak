@@ -1,3 +1,4 @@
 probe,detector,n_rows,n_with_score,avg_score
-leakreplay.GuardianCloze,base.TriggerListDetector,4,4,1.0
-leakreplay.LiteratureCloze,base.TriggerListDetector,226,226,1.0
+leakreplay.GuardianCloze,base.TriggerListDetector,1,0,
+leakreplay.GuardianComplete,leakreplay.StartsWith,1,0,
+leakreplay.LiteratureCloze,base.TriggerListDetector,1,0,
