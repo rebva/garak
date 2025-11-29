@@ -30,7 +30,7 @@ def get_env(name: str, default: str | None = None, required: bool = False) -> st
     return value
 
 
-# ===== 共通設定 =====
+# ===== 共通設定 =====  
 API_URL = get_env("API_URL", required=True)  # 例: http://llm_api:8080
 
 GARAK_USERNAME = get_env("GARAK_USERNAME", required=True)
