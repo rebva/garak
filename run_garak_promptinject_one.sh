@@ -6,7 +6,7 @@ set -euo pipefail
 #    まずは `--list_probes -p promptinject` の結果から
 #    実在する名前をコピペしてください
 #############################################
-PROMPTINJECT_PROBE="${PROMPTINJECT_PROBE}"
+PROMPTINJECT_PROBE=promptinject.HijackHateHumans 
 
 # PROMPTINJECT_PROBE="promptinject.HijackLongPrompt"
 # PROMPTINJECT_PROBE="promptinject.AttackRogueString"
